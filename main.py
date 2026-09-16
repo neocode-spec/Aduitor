@@ -1,7 +1,7 @@
 
 import os
 import sqlite3
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -18,32 +18,51 @@ from google import genai
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
-FREE_DAILY_MESSAGES = int(
-    os.getenv("FREE_DAILY_MESSAGES", "20")
-)
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+
+GEMINI_MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-3.8-flash"
+).strip()
+
+try:
+    FREE_DAILY_MESSAGES = int(
+        os.getenv(
+            "FREE_DAILY_MESSAGES",
+            "20"
+        )
+    )
+except ValueError:
+    FREE_DAILY_MESSAGES = 20
+
 
 DATABASE_PATH = os.getenv(
     "DATABASE_PATH",
     "adiutor.db"
-)
+).strip()
+
 
 WHATSAPP_VERIFY_TOKEN = os.getenv(
     "WHATSAPP_VERIFY_TOKEN",
     "change_this_later"
-)
+).strip()
+
 
 WHATSAPP_ACCESS_TOKEN = os.getenv(
     "WHATSAPP_ACCESS_TOKEN",
     ""
-)
+).strip()
+
 
 WHATSAPP_PHONE_NUMBER_ID = os.getenv(
     "WHATSAPP_PHONE_NUMBER_ID",
     ""
-)
+).strip()
 
 
 # ============================================================
@@ -61,11 +80,25 @@ app = FastAPI(
 # GEMINI
 # ============================================================
 
-gemini_client = None
+gemini_client: Optional[genai.Client] = None
 
 if GEMINI_API_KEY:
-    gemini_client = genai.Client(
-        api_key=GEMINI_API_KEY
+    try:
+        gemini_client = genai.Client(
+            api_key=GEMINI_API_KEY
+        )
+
+        print("Gemini client initialized.")
+
+    except Exception as error:
+        print(
+            "Gemini initialization failed:",
+            error
+        )
+
+else:
+    print(
+        "WARNING: GEMINI_API_KEY is not configured."
     )
 
 
@@ -74,6 +107,10 @@ if GEMINI_API_KEY:
 # ============================================================
 
 def get_db():
+    """
+    Open a connection to the Adiutor SQLite database.
+    """
+
     conn = sqlite3.connect(
         DATABASE_PATH,
         check_same_thread=False
@@ -85,34 +122,55 @@ def get_db():
 
 
 def init_database():
+    """
+    Create Adiutor database tables if they do not exist.
+    """
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT UNIQUE NOT NULL,
-            premium INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL
-        )
-    """)
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT UNIQUE NOT NULL,
+                premium INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
 
-    conn.commit()
-    conn.close()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        conn.commit()
+
+    finally:
+        conn.close()
 
 
 init_database()
+
+
+# ============================================================
+# TIME
+# ============================================================
+
+def utc_now_iso() -> str:
+    """
+    Return the current UTC time as an ISO 8601 string.
+    """
+
+    return datetime.now(
+        timezone.utc
+    ).isoformat()
 
 
 # ============================================================
@@ -122,41 +180,56 @@ init_database()
 def get_or_create_user(user_id: str):
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT * FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-
-    user = cursor.fetchone()
-
-    if user is None:
+    try:
+        cursor = conn.cursor()
 
         cursor.execute(
             """
-            INSERT INTO users
-            (user_id, premium, created_at)
-            VALUES (?, 0, ?)
+            SELECT *
+            FROM users
+            WHERE user_id = ?
             """,
-            (
-                user_id,
-                datetime.utcnow().isoformat()
-            )
-        )
-
-        conn.commit()
-
-        cursor.execute(
-            "SELECT * FROM users WHERE user_id = ?",
             (user_id,)
         )
 
         user = cursor.fetchone()
 
-    conn.close()
+        if user is None:
 
-    return user
+            cursor.execute(
+                """
+                INSERT INTO users
+                (
+                    user_id,
+                    premium,
+                    created_at
+                )
+                VALUES (?, 0, ?)
+                """,
+                (
+                    user_id,
+                    utc_now_iso()
+                )
+            )
+
+            conn.commit()
+
+            cursor.execute(
+                """
+                SELECT *
+                FROM users
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+
+            user = cursor.fetchone()
+
+        return user
+
+    finally:
+        conn.close()
 
 
 # ============================================================
@@ -166,33 +239,36 @@ def get_or_create_user(user_id: str):
 def get_daily_usage(user_id: str) -> int:
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    today = date.today().isoformat()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT COUNT(*)
-        FROM messages
-        WHERE user_id = ?
-        AND role = 'user'
-        AND DATE(created_at) = ?
-        """,
-        (
-            user_id,
-            today
+        today = date.today().isoformat()
+
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM messages
+            WHERE user_id = ?
+            AND role = 'user'
+            AND DATE(created_at) = ?
+            """,
+            (
+                user_id,
+                today
+            )
         )
-    )
 
-    count = cursor.fetchone()[0]
+        count = cursor.fetchone()[0]
 
-    conn.close()
+        return count
 
-    return count
+    finally:
+        conn.close()
 
 
 # ============================================================
-# MESSAGE HISTORY
+# MESSAGE STORAGE
 # ============================================================
 
 def save_message(
@@ -200,27 +276,43 @@ def save_message(
     role: str,
     content: str
 ):
+    """
+    Save a user or assistant message.
+    """
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO messages
-        (user_id, role, content, created_at)
-        VALUES (?, ?, ?, ?)
-        """,
-        (
-            user_id,
-            role,
-            content,
-            datetime.utcnow().isoformat()
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO messages
+            (
+                user_id,
+                role,
+                content,
+                created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                role,
+                content,
+                utc_now_iso()
+            )
         )
-    )
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
+    finally:
+        conn.close()
+
+
+# ============================================================
+# MESSAGE HISTORY
+# ============================================================
 
 def get_history(
     user_id: str,
@@ -228,29 +320,30 @@ def get_history(
 ):
 
     conn = get_db()
-    cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT role, content
-        FROM messages
-        WHERE user_id = ?
-        ORDER BY id DESC
-        LIMIT ?
-        """,
-        (
-            user_id,
-            limit
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT role, content
+            FROM messages
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (
+                user_id,
+                limit
+            )
         )
-    )
 
-    rows = cursor.fetchall()
+        rows = cursor.fetchall()
 
-    conn.close()
+    finally:
+        conn.close()
 
-    rows = list(reversed(rows))
-
-    return rows
+    return list(reversed(rows))
 
 
 # ============================================================
@@ -290,10 +383,10 @@ Behavior:
 8. Keep WhatsApp responses readable and reasonably concise.
 9. Use plain text and simple formatting that works well in WhatsApp.
 10. If the user asks for a document, produce clean copy that can be copied easily.
-11. Remember relevant context within the conversation.
+11. Remember relevant context within the available conversation history.
 12. Be honest about limitations.
-
-You are Adiutor, not a generic chatbot.
+13. Do not invent external information or actions.
+14. You are Adiutor, not a generic chatbot.
 """
 
 
@@ -346,11 +439,13 @@ def generate_response(
         role = item["role"]
 
         if role == "user":
+
             conversation.append(
                 f"User: {item['content']}"
             )
 
         elif role == "assistant":
+
             conversation.append(
                 f"Adiutor: {item['content']}"
             )
@@ -399,28 +494,47 @@ def chat(request: ChatRequest):
             detail="Message cannot be empty."
         )
 
+    user_id = request.user_id.strip()
+
+    if not user_id:
+
+        raise HTTPException(
+            status_code=400,
+            detail="User ID cannot be empty."
+        )
+
+    # --------------------------------------------------------
+    # GET OR CREATE USER
+    # --------------------------------------------------------
+
     user = get_or_create_user(
-        request.user_id
+        user_id
     )
 
-    premium = bool(user["premium"])
+    premium = bool(
+        user["premium"]
+    )
+
+    # --------------------------------------------------------
+    # CHECK DAILY USAGE
+    # --------------------------------------------------------
 
     usage = get_daily_usage(
-        request.user_id
+        user_id
     )
 
-    # --------------------------------------------------------
-    # FREE USER LIMIT
-    # --------------------------------------------------------
-
-    if not premium and usage >= FREE_DAILY_MESSAGES:
+    if (
+        not premium
+        and usage >= FREE_DAILY_MESSAGES
+    ):
 
         return ChatResponse(
             response=(
-                "You have reached your free daily limit "
-                f"of {FREE_DAILY_MESSAGES} messages.\n\n"
-                "Upgrade your Adiutor plan to continue "
-                "using the assistant."
+                "You have reached your free daily "
+                f"limit of {FREE_DAILY_MESSAGES} "
+                "messages today.\n\n"
+                "Upgrade your Adiutor plan to "
+                "continue using the assistant."
             ),
             usage=usage,
             daily_limit=FREE_DAILY_MESSAGES,
@@ -428,23 +542,18 @@ def chat(request: ChatRequest):
         )
 
     # --------------------------------------------------------
-    # SAVE USER MESSAGE
-    # --------------------------------------------------------
-
-    save_message(
-        request.user_id,
-        "user",
-        message
-    )
-
-    # --------------------------------------------------------
     # GENERATE AI RESPONSE
+    #
+    # IMPORTANT:
+    # We generate the response BEFORE saving the user
+    # message. This prevents failed Gemini requests from
+    # consuming the user's daily message allowance.
     # --------------------------------------------------------
 
     try:
 
         answer = generate_response(
-            request.user_id,
+            user_id,
             message
         )
 
@@ -452,18 +561,25 @@ def chat(request: ChatRequest):
 
         error_text = str(error).lower()
 
-        # Gemini quota / rate-limit handling
+        # ----------------------------------------------------
+        # GEMINI QUOTA / RATE LIMIT
+        # ----------------------------------------------------
+
         if (
             "429" in error_text
             or "quota" in error_text
             or "rate" in error_text
             or "resource exhausted" in error_text
+            or "too many requests" in error_text
         ):
 
             return ChatResponse(
                 response=(
-                    "Adiutor is temporarily at its AI usage "
-                    "limit. Please try again later."
+                    "Adiutor is temporarily unable "
+                    "to use its AI service because "
+                    "the current AI usage limit has "
+                    "been reached.\n\n"
+                    "Please try again later."
                 ),
                 usage=usage,
                 daily_limit=(
@@ -474,6 +590,40 @@ def chat(request: ChatRequest):
                 premium=premium
             )
 
+        # ----------------------------------------------------
+        # API KEY / AUTHENTICATION ERROR
+        # ----------------------------------------------------
+
+        if (
+            "api key" in error_text
+            or "unauthorized" in error_text
+            or "authentication" in error_text
+            or "permission denied" in error_text
+        ):
+
+            print(
+                "Gemini authentication error:",
+                error
+            )
+
+            return ChatResponse(
+                response=(
+                    "Adiutor's AI service is not "
+                    "properly configured right now."
+                ),
+                usage=usage,
+                daily_limit=(
+                    None
+                    if premium
+                    else FREE_DAILY_MESSAGES
+                ),
+                premium=premium
+            )
+
+        # ----------------------------------------------------
+        # GENERAL GEMINI ERROR
+        # ----------------------------------------------------
+
         print(
             "Gemini error:",
             error
@@ -481,8 +631,8 @@ def chat(request: ChatRequest):
 
         return ChatResponse(
             response=(
-                "Adiutor could not process that request "
-                "right now. Please try again."
+                "Adiutor could not process that "
+                "request right now. Please try again."
             ),
             usage=usage,
             daily_limit=(
@@ -494,17 +644,27 @@ def chat(request: ChatRequest):
         )
 
     # --------------------------------------------------------
-    # SAVE ASSISTANT RESPONSE
+    # SAVE SUCCESSFUL CONVERSATION
     # --------------------------------------------------------
 
     save_message(
-        request.user_id,
+        user_id,
+        "user",
+        message
+    )
+
+    save_message(
+        user_id,
         "assistant",
         answer
     )
 
+    # --------------------------------------------------------
+    # UPDATED USAGE
+    # --------------------------------------------------------
+
     new_usage = get_daily_usage(
-        request.user_id
+        user_id
     )
 
     return ChatResponse(
@@ -532,6 +692,7 @@ def health():
         "gemini_configured": bool(
             GEMINI_API_KEY
         ),
+        "gemini_model": GEMINI_MODEL,
         "whatsapp_configured": bool(
             WHATSAPP_ACCESS_TOKEN
             and WHATSAPP_PHONE_NUMBER_ID
@@ -543,7 +704,10 @@ def health():
 # ROOT PAGE
 # ============================================================
 
-@app.get("/", response_class=HTMLResponse)
+@app.get(
+    "/",
+    response_class=HTMLResponse
+)
 def home():
 
     return """
@@ -607,6 +771,11 @@ def home():
                 font-weight: bold;
             }
 
+            button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
             .response {
                 margin-top: 25px;
                 background: #111;
@@ -614,6 +783,7 @@ def home():
                 border-radius: 10px;
                 padding: 20px;
                 white-space: pre-wrap;
+                min-height: 40px;
             }
 
         </style>
@@ -637,7 +807,10 @@ def home():
 
             <br>
 
-            <button onclick="sendMessage()">
+            <button
+                id="sendButton"
+                onclick="sendMessage()"
+            >
                 Send
             </button>
 
@@ -660,14 +833,21 @@ def home():
                         "message"
                     ).value.trim();
 
-                if (!message) {
-                    return;
-                }
-
                 const responseBox =
                     document.getElementById(
                         "response"
                     );
+
+                const sendButton =
+                    document.getElementById(
+                        "sendButton"
+                    );
+
+                if (!message) {
+                    return;
+                }
+
+                sendButton.disabled = true;
 
                 responseBox.innerText =
                     "Adiutor is thinking...";
@@ -707,10 +887,18 @@ def home():
                     responseBox.innerText =
                         data.response;
 
+                    document.getElementById(
+                        "message"
+                    ).value = "";
+
                 } catch (error) {
 
                     responseBox.innerText =
                         "Could not connect to Adiutor.";
+
+                } finally {
+
+                    sendButton.disabled = false;
 
                 }
 
@@ -771,7 +959,16 @@ async def whatsapp_webhook(
     request: Request
 ):
 
-    data = await request.json()
+    try:
+
+        data = await request.json()
+
+    except Exception:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON payload."
+        )
 
     print(
         "WhatsApp webhook received:"
@@ -780,18 +977,17 @@ async def whatsapp_webhook(
     print(data)
 
     # --------------------------------------------------------
-    # WHATSAPP MESSAGE PROCESSING WILL BE ADDED HERE.
+    # WHATSAPP MESSAGE PROCESSING
     #
-    # This endpoint currently receives WhatsApp events,
-    # but it does not yet send replies back through Meta.
+    # This currently receives Meta webhook events.
     #
     # The next WhatsApp integration stage will:
     #
     # 1. Read the incoming WhatsApp message
     # 2. Identify the sender
-    # 3. Send the message to Adiutor
+    # 3. Pass the message to Adiutor
     # 4. Generate the Gemini response
-    # 5. Send the response back through WhatsApp
+    # 5. Send the response back through Meta
     # --------------------------------------------------------
 
     return {
@@ -800,7 +996,49 @@ async def whatsapp_webhook(
 
 
 # ============================================================
-# STARTUP MESSAGE
+# STARTUP
+# ============================================================
+
+@app.on_event("startup")
+async def startup_event():
+
+    print("=" * 50)
+    print("ADIUTOR STARTING")
+    print("=" * 50)
+
+    print(
+        "Gemini configured:",
+        bool(GEMINI_API_KEY)
+    )
+
+    print(
+        "Gemini model:",
+        GEMINI_MODEL
+    )
+
+    print(
+        "Free daily messages:",
+        FREE_DAILY_MESSAGES
+    )
+
+    print(
+        "Database:",
+        DATABASE_PATH
+    )
+
+    print(
+        "WhatsApp configured:",
+        bool(
+            WHATSAPP_ACCESS_TOKEN
+            and WHATSAPP_PHONE_NUMBER_ID
+        )
+    )
+
+    print("=" * 50)
+
+
+# ============================================================
+# DIRECT START
 # ============================================================
 
 if __name__ == "__main__":
@@ -818,3 +1056,4 @@ if __name__ == "__main__":
         ),
         reload=False
     )
+
