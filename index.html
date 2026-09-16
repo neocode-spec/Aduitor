@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Adiutor</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Inter/System UI for controls, Georgia for the assistant -->
+    <style>
+        :root {
+            --black: #09090a;
+            --sidebar: #0e0e0f;
+            --panel: #111112;
+            --panel-soft: #151516;
+            --border: #252527;
+            --silver: #77777b;
+            --silver-dark: #505054;
+            --text: #e5e5e2;
+            --muted: #858589;
+            --dim: #555559;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: var(--black);
+            color: var(--text);
+        }
+
+        body {
+            font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                "Segoe UI", sans-serif;
+            overflow: hidden;
+        }
+
+        /* Assistant / editorial text */
+        .serif {
+            font-family: Georgia, "Times New Roman", serif;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 7px;
+            height: 7px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2d2d2f;
+            border-radius: 999px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3b3b3e;
+        }
+
+        /* Subtle dusty texture */
+        .dust {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            opacity: 0.025;
+            background-image:
+                radial-gradient(circle at 20% 30%, #ffffff 0.5px, transparent 0.7px),
+                radial-gradient(circle at 70% 60%, #ffffff 0.5px, transparent 0.7px),
+                radial-gradient(circle at 40% 80%, #ffffff 0.5px, transparent 0.7px);
+            background-size: 80px 80px, 120px 120px, 160px 160px;
+            z-index: 50;
+        }
+
+        /* Crescent logo */
+        .crescent {
+            position: relative;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: linear-gradient(
+                145deg,
+                #d8d8d9 0%,
+                #99999d 45%,
+                #5d5d61 100%
+            );
+            box-shadow:
+                0 0 12px rgba(190, 190, 193, 0.08),
+                inset -2px -2px 4px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .crescent::after {
+            content: "";
+            position: absolute;
+            width: 25px;
+            height: 25px;
+            top: -5px;
+            left: 7px;
+            border-radius: 50%;
+            background: var(--black);
+        }
+
+        /* Slightly larger logo version */
+        .crescent-large {
+            width: 34px;
+            height: 34px;
+        }
+
+        .crescent-large::after {
+            width: 34px;
+            height: 34px;
+            top: -7px;
+            left: 9px;
+        }
+
+        /* Soft loading animation */
+        @keyframes breathe {
+            0%, 100% {
+                opacity: 0.55;
+                transform: scale(0.96);
+            }
+
+            50% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .thinking {
+            animation: breathe 1.8s ease-in-out infinite;
+        }
+
+        /* Message entrance */
+        @keyframes messageIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-in {
+            animation: messageIn 0.28s ease-out;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            transition:
+                width 0.25s ease,
+                transform 0.25s ease;
+        }
+
+        /* Textarea */
+        textarea {
+            resize: none;
+            outline: none;
+        }
+
+        /* Send button */
+        .send-button {
+            transition:
+                background 0.2s ease,
+                transform 0.2s ease,
+                opacity 0.2s ease;
+        }
+
+        .send-button:hover {
+            background: #69696d;
+        }
+
+        .send-button:active {
+            transform: scale(0.94);
+        }
+
+        .send-button:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+
+        /* Navigation items */
+        .nav-item {
+            transition:
+                background 0.18s ease,
+                color 0.18s ease;
+        }
+
+        .nav-item:hover {
+            background: #181819;
+            color: #d5d5d7;
+        }
+
+        /* Mobile sidebar overlay */
+        .mobile-overlay {
+            transition: opacity 0.25s ease;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="dust"></div>
+
+    <div class="flex h-screen w-full">
+
+        <!-- MOBILE OVERLAY -->
+        <div
+            id="mobileOverlay"
+            class="mobile-overlay fixed inset-0 z-30 hidden bg-black/60 opacity-0 md:hidden"
+            onclick="closeSidebar()"
+        ></div>
+
+        <!-- SIDEBAR -->
+        <aside
+            id="sidebar"
+            class="sidebar fixed left-0 top-0 z-40 flex h-full w-[270px] -translate-x-full flex-col border-r border-[#252527] bg-[#0e0e0f] md:relative md:translate-x-0"
+        >
+
+            <!-- Logo / Brand -->
+            <div class="flex h-[68px] items-center px-5">
+
+                <div class="flex items-center gap-3">
+                    <div class="crescent"></div>
+
+                    <div>
+                        <div class="serif text-[19px] tracking-tight text-[#e1e1df]">
+                            Adiutor
+                        </div>
+
+                        <div class="text-[10px] uppercase tracking-[0.22em] text-[#555559]">
+                            Assistant
+                        </div>
+                    </div>
+                </div>
+
+                <button
+                    onclick="closeSidebar()"
+                    class="ml-auto rounded-lg p-2 text-[#626266] hover:bg-[#181819] hover:text-[#a4a4a7] md:hidden"
+                    aria-label="Close sidebar"
+                >
+                    ✕
+                </button>
+
+            </div>
+
+            <!-- New Chat -->
+            <div class="px-3 pt-3">
+
+                <button
+                    onclick="newChat()"
+                    class="flex w-full items-center gap-3 rounded-xl border border-[#29292b] bg-[#151516] px-4 py-3 text-left text-sm text-[#c7c7c9] transition hover:border-[#3b3b3e] hover:bg-[#19191a]"
+                >
+                    <span class="text-lg text-[#99999c]">＋</span>
+                    <span>New chat</span>
+                </button>
+
+            </div>
+
+            <!-- Navigation -->
+            <nav class="mt-5 px-3">
+
+                <div class="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.2em] text-[#4f4f52]">
+                    Workspace
+                </div>
+
+                <button class="nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#858589]">
+                    <span>⌂</span>
+                    <span>Chats</span>
+                </button>
+
+                <button class="nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#858589]">
+                    <span>▱</span>
+                    <span>Documents</span>
+                </button>
+
+                <button class="nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#858589]">
+                    <span>◌</span>
+                    <span>Tasks</span>
+                </button>
+
+                <button class="nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#858589]">
+                    <span>⌕</span>
+                    <span>Search</span>
+                </button>
+
+            </nav>
+
+            <!-- Recent Chats -->
+            <div class="mt-7 flex-1 overflow-y-auto px-3">
+
+                <div class="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.2em] text-[#4f4f52]">
+                    Recent
+                </div>
+
+                <div id="recentChats" class="space-y-1">
+
+                    <button class="nav-item w-full truncate rounded-lg px-3 py-2.5 text-left text-sm text-[#737377]">
+                        New conversation
+                    </button>
+
+                </div>
+
+            </div>
+
+            <!-- Bottom Sidebar -->
+            <div class="border-t border-[#202022] p-3">
+
+                <button
+                    class="nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#77777b]"
+                >
+                    <span>⚙</span>
+                    <span>Settings</span>
+                </button>
+
+                <button
+                    class="nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[#77777b]"
+                >
+                    <span>?</span>
+                    <span>Help</span>
+                </button>
+
+            </div>
+
+        </aside>
+
+
+        <!-- MAIN -->
+        <main class="flex min-w-0 flex-1 flex-col bg-[#09090a]">
+
+            <!-- TOP BAR -->
+            <header
+                class="flex h-[68px] shrink-0 items-center justify-between border-b border-[#1d1d1f] px-4 md:px-7"
+            >
+
+                <div class="flex items-center gap-3">
+
+                    <!-- Mobile menu -->
+                    <button
+                        onclick="openSidebar()"
+                        class="rounded-lg p-2 text-[#737377] hover:bg-[#171718] hover:text-[#a0a0a3] md:hidden"
+                        aria-label="Open sidebar"
+                    >
+                        ☰
+                    </button>
+
+                    <div class="flex items-center gap-2 md:hidden">
+                        <div class="crescent"></div>
+
+                        <span class="serif text-[17px] text-[#d3d3d1]">
+                            Adiutor
+                        </span>
+                    </div>
+
+                </div>
+
+                <div class="flex items-center gap-2">
+
+                    <div
+                        id="connectionStatus"
+                        class="hidden items-center gap-2 rounded-full border border-[#242426] px-3 py-1.5 text-[11px] text-[#626266] sm:flex"
+                    >
+                        <span
+                            id="statusDot"
+                            class="h-1.5 w-1.5 rounded-full bg-[#555559]"
+                        ></span>
+
+                        <span id="statusText">
+                            Offline
+                        </span>
+                    </div>
+
+                    <button
+                        class="rounded-lg px-3 py-2 text-sm text-[#77777b] hover:bg-[#171718] hover:text-[#b0b0b2]"
+                    >
+                        Sign in
+                    </button>
+
+                    <button
+                        class="rounded-lg border border-[#343437] bg-[#171718] px-3 py-2 text-sm text-[#bcbcbc] transition hover:bg-[#1d1d1f]"
+                    >
+                        Account
+                    </button>
+
+                </div>
+
+            </header>
+
+
+            <!-- CHAT AREA -->
+            <section
+                id="chatArea"
+                class="flex-1 overflow-y-auto"
+            >
+
+                <div
+                    id="messages"
+                    class="mx-auto flex min-h-full w-full max-w-[850px] flex-col px-5 pb-40 pt-12 md:px-8 md:pt-16"
+                >
+
+                    <!-- EMPTY STATE -->
+                    <div
+                        id="emptyState"
+                        class="flex flex-1 flex-col items-center justify-center pb-20"
+                    >
+
+                        <div class="thinking mb-7">
+                            <div class="crescent crescent-large"></div>
+                        </div>
+
+                        <h1
+                            class="serif text-center text-[30px] tracking-tight text-[#dededb] md:text-[38px]"
+                        >
+                            How can I help?
+                        </h1>
+
+                        <p
+                            class="mt-3 max-w-md text-center text-sm leading-6 text-[#66666a]"
+                        >
+                            Write, think, research, organize, or work through
+                            something with Adiutor.
+                        </p>
+
+                        <div class="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
+
+                            <button
+                                onclick="usePrompt('Write a professional email for me')"
+                                class="rounded-xl border border-[#222224] bg-[#101011] p-4 text-left transition hover:border-[#343437] hover:bg-[#151516]"
+                            >
+                                <div class="serif text-sm text-[#bcbcbf]">
+                                    Write something
+                                </div>
+
+                                <div class="mt-1 text-xs text-[#5d5d61]">
+                                    Emails, messages, documents
+                                </div>
+                            </button>
+
+                            <button
+                                onclick="usePrompt('Help me solve this problem')"
+                                class="rounded-xl border border-[#222224] bg-[#101011] p-4 text-left transition hover:border-[#343437] hover:bg-[#151516]"
+                            >
+                                <div class="serif text-sm text-[#bcbcbf]">
+                                    Work through a problem
+                                </div>
+
+                                <div class="mt-1 text-xs text-[#5d5d61]">
+                                    Reasoning and explanations
+                                </div>
+                            </button>
+
+                            <button
+                                onclick="usePrompt('Summarize this for me: ')"
+                                class="rounded-xl border border-[#222224] bg-[#101011] p-4 text-left transition hover:border-[#343437] hover:bg-[#151516]"
+                            >
+                                <div class="serif text-sm text-[#bcbcbf]">
+                                    Summarize
+                                </div>
+
+                                <div class="mt-1 text-xs text-[#5d5d61]">
+                                    Turn long text into the essentials
+                                </div>
+                            </button>
+
+                            <button
+                                onclick="usePrompt('Help me plan this: ')"
+                                class="rounded-xl border border-[#222224] bg-[#101011] p-4 text-left transition hover:border-[#343437] hover:bg-[#151516]"
+                            >
+                                <div class="serif text-sm text-[#bcbcbf]">
+                                    Plan something
+                                </div>
+
+                                <div class="mt-1 text-xs text-[#5d5d61]">
+                                    Projects, work, and ideas
+                                </div>
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- INPUT AREA -->
+            <div class="pointer-events-none fixed bottom-0 left-0 right-0 z-20">
+
+                <div class="mx-auto max-w-[900px] px-4 pb-4 md:px-8 md:pb-6">
+
+                    <div class="pointer-events-auto">
+
+                        <div
+                            class="rounded-2xl border border-[#29292b] bg-[#111112]/95 p-2 shadow-[0_-10px_50px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+                        >
+
+                            <textarea
+                                id="messageInput"
+                                rows="1"
+                                placeholder="Message Adiutor..."
+                                class="serif max-h-[220px] min-h-[52px] w-full bg-transparent px-4 py-3 text-[15px] leading-6 text-[#d9d9d6] placeholder:text-[#555559]"
+                            ></textarea>
+
+                            <div class="flex items-center justify-between px-2 pb-1">
+
+                                <div class="flex items-center gap-1">
+
+                                    <button
+                                        class="rounded-lg px-2.5 py-2 text-xs text-[#5e5e62] transition hover:bg-[#19191a] hover:text-[#969699]"
+                                        title="Attach file"
+                                    >
+                                        ＋
+                                    </button>
+
+                                    <span class="hidden text-[11px] text-[#4e4e51] sm:block">
+                                        Adiutor
+                                    </span>
+
+                                </div>
+
+                                <button
+                                    id="sendButton"
+                                    onclick="sendMessage()"
+                                    disabled
+                                    class="send-button flex h-9 w-9 items-center justify-center rounded-xl bg-[#555558] text-[#e6e6e4]"
+                                    aria-label="Send message"
+                                >
+                                    ↑
+                                </button>
+
+                            </div>
+
+                        </div>
+
+                        <p class="mt-2 text-center text-[10px] text-[#414144]">
+                            Adiutor can make mistakes. Check important information.
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </main>
+
+    </div>
+
+
+    <script>
+        /*
+         * ==========================================
+         * ADIUTOR FRONTEND
+         * ==========================================
+         *
+         * Backend:
+         * POST /api/chat
+         *
+         * Expected request:
+         * {
+         *     "user_id": "...",
+         *     "message": "..."
+         * }
+         *
+         * Expected response:
+         * {
+         *     "response": "..."
+         * }
+         *
+         * If the frontend and backend are deployed
+         * separately, change API_BASE_URL below.
+         */
+
+        const API_BASE_URL = "";
+
+        const messageInput = document.getElementById("messageInput");
+        const sendButton = document.getElementById("sendButton");
+        const messages = document.getElementById("messages");
+        const emptyState = document.getElementById("emptyState");
+        const chatArea = document.getElementById("chatArea");
+
+        let userId = localStorage.getItem("adiutor_user_id");
+
+        if (!userId) {
+            userId =
+                "web_" +
+                Math.random().toString(36).substring(2, 10) +
+                "_" +
+                Date.now();
+
+            localStorage.setItem("adiutor_user_id", userId);
+        }
+
+
+        /* ------------------------------------------
+           CONNECTION CHECK
+        ------------------------------------------ */
+
+        async function checkConnection() {
+            const statusDot = document.getElementById("statusDot");
+            const statusText = document.getElementById("statusText");
+
+            try {
+                const response = await fetch(
+                    `${API_BASE_URL}/health`,
+                    {
+                        method: "GET"
+                    }
+                );
+
+                if (!response.ok) {
+                    throw new Error("Backend unavailable");
+                }
+
+                statusDot.className =
+                    "h-1.5 w-1.5 rounded-full bg-[#8f8f92]";
+
+                statusText.textContent = "Online";
+
+            } catch (error) {
+
+                statusDot.className =
+                    "h-1.5 w-1.5 rounded-full bg-[#4a4a4d]";
+
+                statusText.textContent = "Offline";
+            }
+        }
+
+
+        /* ------------------------------------------
+           INPUT
+        ------------------------------------------ */
+
+        function updateInput() {
+            sendButton.disabled =
+                messageInput.value.trim().length === 0;
+
+            messageInput.style.height = "auto";
+
+            const newHeight =
+                Math.min(messageInput.scrollHeight, 220);
+
+            messageInput.style.height =
+                newHeight + "px";
+        }
+
+
+        messageInput.addEventListener(
+            "input",
+            updateInput
+        );
+
+
+        messageInput.addEventListener(
+            "keydown",
+            function (event) {
+
+                if (
+                    event.key === "Enter" &&
+                    !event.shiftKey
+                ) {
+                    event.preventDefault();
+
+                    if (!sendButton.disabled) {
+                        sendMessage();
+                    }
+                }
+            }
+        );
+
+
+        /* ------------------------------------------
+           PROMPT BUTTONS
+        ------------------------------------------ */
+
+        function usePrompt(prompt) {
+
+            messageInput.value = prompt;
+
+            updateInput();
+
+            messageInput.focus();
+        }
+
+
+        /* ------------------------------------------
+           ADD USER MESSAGE
+        ------------------------------------------ */
+
+        function addUserMessage(text) {
+
+            emptyState?.remove();
+
+            const wrapper =
+                document.createElement("div");
+
+            wrapper.className =
+                "message-in mb-7 flex justify-end";
+
+            const bubble =
+                document.createElement("div");
+
+            bubble.className =
+                "max-w-[75%] rounded-2xl rounded-br-md bg-[#1b1b1d] px-4 py-3 text-sm leading-6 text-[#d5d5d3]";
+
+            bubble.textContent = text;
+
+            wrapper.appendChild(bubble);
+
+            messages.appendChild(wrapper);
+
+            scrollToBottom();
+        }
+
+
+        /* ------------------------------------------
+           ADD ASSISTANT MESSAGE
+        ------------------------------------------ */
+
+        function addAssistantMessage(text) {
+
+            const wrapper =
+                document.createElement("div");
+
+            wrapper.className =
+                "message-in mb-8 flex gap-4";
+
+            const icon =
+                document.createElement("div");
+
+            icon.className =
+                "mt-1 shrink-0";
+
+            icon.innerHTML =
+                '<div class="crescent"></div>';
+
+            const content =
+                document.createElement("div");
+
+            content.className =
+                "min-w-0 flex-1";
+
+            const label =
+                document.createElement("div");
+
+            label.className =
+                "mb-2 text-xs font-medium text-[#77777b]";
+
+            label.textContent =
+                "Adiutor";
+
+            const body =
+                document.createElement("div");
+
+            body.className =
+                "serif whitespace-pre-wrap text-[15px] leading-7 text-[#d2d2cf]";
+
+            body.textContent = text;
+
+            content.appendChild(label);
+            content.appendChild(body);
+
+            wrapper.appendChild(icon);
+            wrapper.appendChild(content);
+
+            messages.appendChild(wrapper);
+
+            scrollToBottom();
+        }
+
+
+        /* ------------------------------------------
+           THINKING INDICATOR
+        ------------------------------------------ */
+
+        function addThinking() {
+
+            const wrapper =
+                document.createElement("div");
+
+            wrapper.id = "thinkingMessage";
+
+            wrapper.className =
+                "message-in mb-8 flex gap-4";
+
+            wrapper.innerHTML = `
+                <div class="mt-1 shrink-0 thinking">
+                    <div class="crescent"></div>
+                </div>
+
+                <div class="flex items-center">
+                    <div class="serif text-sm text-[#66666a]">
+                        Thinking...
+                    </div>
+                </div>
+            `;
+
+            messages.appendChild(wrapper);
+
+            scrollToBottom();
+        }
+
+
+        function removeThinking() {
+
+            const thinking =
+                document.getElementById("thinkingMessage");
+
+            if (thinking) {
+                thinking.remove();
+            }
+        }
+
+
+        /* ------------------------------------------
+           SEND MESSAGE
+        ------------------------------------------ */
+
+        async function sendMessage() {
+
+            const text =
+                messageInput.value.trim();
+
+            if (!text) return;
+
+            messageInput.value = "";
+
+            updateInput();
+
+            addUserMessage(text);
+
+            addThinking();
+
+            sendButton.disabled = true;
+
+            try {
+
+                const response =
+                    await fetch(
+                        `${API_BASE_URL}/api/chat`,
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body: JSON.stringify({
+                                user_id: userId,
+                                message: text
+                            })
+                        }
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                removeThinking();
+
+
+                if (!response.ok) {
+
+                    const errorMessage =
+                        data.detail ||
+                        data.message ||
+                        "Adiutor could not process that request.";
+
+                    addAssistantMessage(
+                        errorMessage
+                    );
+
+                    return;
+                }
+
+
+                const assistantText =
+                    data.response ||
+                    data.message ||
+                    data.answer ||
+                    "Adiutor returned an empty response.";
+
+                addAssistantMessage(
+                    assistantText
+                );
+
+
+                updateRecentChat(text);
+
+
+            } catch (error) {
+
+                removeThinking();
+
+                addAssistantMessage(
+                    "I couldn't connect to the Adiutor backend. The server may be offline or unavailable."
+                );
+
+            } finally {
+
+                updateInput();
+
+            }
+        }
+
+
+        /* ------------------------------------------
+           RECENT CHAT
+        ------------------------------------------ */
+
+        function updateRecentChat(text) {
+
+            const recentChats =
+                document.getElementById("recentChats");
+
+            const existing =
+                recentChats.querySelector(
+                    "button"
+                );
+
+            if (existing) {
+                existing.textContent =
+                    text.substring(0, 35);
+            }
+        }
+
+
+        /* ------------------------------------------
+           NEW CHAT
+        ------------------------------------------ */
+
+        function newChat() {
+
+            messages.innerHTML = "";
+
+            messages.appendChild(
+                createEmptyState()
+            );
+
+            messageInput.value = "";
+
+            updateInput();
+
+            messageInput.focus();
+        }
+
+
+        function createEmptyState() {
+
+            const wrapper =
+                document.createElement("div");
+
+            wrapper.id = "emptyState";
+
+            wrapper.className =
+                "flex flex-1 flex-col items-center justify-center pb-20";
+
+            wrapper.innerHTML = `
+                <div class="thinking mb-7">
+                    <div class="crescent crescent-large"></div>
+                </div>
+
+                <h1 class="serif text-center text-[30px] tracking-tight text-[#dededb] md:text-[38px]">
+                    How can I help?
+                </h1>
+
+                <p class="mt-3 max-w-md text-center text-sm leading-6 text-[#66666a]">
+                    Write, think, research, organize, or work through something with Adiutor.
+                </p>
+            `;
+
+            return wrapper;
+        }
+
+
+        /* ------------------------------------------
+           SCROLL
+        ------------------------------------------ */
+
+        function scrollToBottom() {
+
+            setTimeout(() => {
+
+                chatArea.scrollTo({
+                    top: chatArea.scrollHeight,
+                    behavior: "smooth"
+                });
+
+            }, 50);
+        }
+
+
+        /* ------------------------------------------
+           SIDEBAR
+        ------------------------------------------ */
+
+        function openSidebar() {
+
+            const sidebar =
+                document.getElementById("sidebar");
+
+            const overlay =
+                document.getElementById("mobileOverlay");
+
+            sidebar.classList.remove(
+                "-translate-x-full"
+            );
+
+            overlay.classList.remove(
+                "hidden"
+            );
+
+            setTimeout(() => {
+                overlay.classList.remove(
+                    "opacity-0"
+                );
+            }, 10);
+        }
+
+
+        function closeSidebar() {
+
+            const sidebar =
+                document.getElementById("sidebar");
+
+            const overlay =
+                document.getElementById("mobileOverlay");
+
+            sidebar.classList.add(
+                "-translate-x-full"
+            );
+
+            overlay.classList.add(
+                "opacity-0"
+            );
+
+            setTimeout(() => {
+                overlay.classList.add(
+                    "hidden"
+                );
+            }, 250);
+        }
+
+
+        /* ------------------------------------------
+           STARTUP
+        ------------------------------------------ */
+
+        checkConnection();
+    </script>
+
+</body>
+</html>
