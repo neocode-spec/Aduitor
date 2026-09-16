@@ -1,4 +1,3 @@
-
 import os
 import sqlite3
 from datetime import datetime, date, timezone
@@ -6,7 +5,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from google import genai
 
@@ -66,6 +65,20 @@ WHATSAPP_PHONE_NUMBER_ID = os.getenv(
 
 
 # ============================================================
+# FILE PATHS
+# ============================================================
+
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+INDEX_FILE = os.path.join(
+    BASE_DIR,
+    "index.html"
+)
+
+
+# ============================================================
 # FASTAPI
 # ============================================================
 
@@ -81,6 +94,7 @@ app = FastAPI(
 # ============================================================
 
 gemini_client: Optional[genai.Client] = None
+
 
 if GEMINI_API_KEY:
     try:
@@ -545,9 +559,8 @@ def chat(request: ChatRequest):
     # GENERATE AI RESPONSE
     #
     # IMPORTANT:
-    # We generate the response BEFORE saving the user
-    # message. This prevents failed Gemini requests from
-    # consuming the user's daily message allowance.
+    # Generate BEFORE saving the user message so failed
+    # Gemini requests do not consume the daily allowance.
     # --------------------------------------------------------
 
     try:
@@ -696,220 +709,35 @@ def health():
         "whatsapp_configured": bool(
             WHATSAPP_ACCESS_TOKEN
             and WHATSAPP_PHONE_NUMBER_ID
+        ),
+        "frontend_exists": os.path.exists(
+            INDEX_FILE
         )
     }
 
 
 # ============================================================
-# ROOT PAGE
+# FRONTEND
 # ============================================================
 
-@app.get(
-    "/",
-    response_class=HTMLResponse
-)
-def home():
+@app.get("/")
+async def home():
 
-    return """
-    <!DOCTYPE html>
+    if not os.path.exists(INDEX_FILE):
 
-    <html>
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "index.html was not found. "
+                "Make sure index.html is in the same "
+                "folder as main.py."
+            )
+        )
 
-    <head>
-
-        <title>Adiutor</title>
-
-        <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1"
-        >
-
-        <style>
-
-            body {
-                margin: 0;
-                background: #050505;
-                color: white;
-                font-family: Arial, sans-serif;
-            }
-
-            .container {
-                max-width: 800px;
-                margin: auto;
-                padding: 40px 20px;
-            }
-
-            h1 {
-                margin-bottom: 5px;
-            }
-
-            .status {
-                color: #888;
-                margin-bottom: 30px;
-            }
-
-            textarea {
-                width: 100%;
-                height: 100px;
-                background: #111;
-                color: white;
-                border: 1px solid #333;
-                border-radius: 10px;
-                padding: 15px;
-                box-sizing: border-box;
-                resize: vertical;
-            }
-
-            button {
-                margin-top: 10px;
-                padding: 12px 20px;
-                background: white;
-                color: black;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                font-weight: bold;
-            }
-
-            button:disabled {
-                opacity: 0.5;
-                cursor: not-allowed;
-            }
-
-            .response {
-                margin-top: 25px;
-                background: #111;
-                border: 1px solid #222;
-                border-radius: 10px;
-                padding: 20px;
-                white-space: pre-wrap;
-                min-height: 40px;
-            }
-
-        </style>
-
-    </head>
-
-    <body>
-
-        <div class="container">
-
-            <h1>Adiutor</h1>
-
-            <div class="status">
-                AI assistant backend
-            </div>
-
-            <textarea
-                id="message"
-                placeholder="Talk to Adiutor..."
-            ></textarea>
-
-            <br>
-
-            <button
-                id="sendButton"
-                onclick="sendMessage()"
-            >
-                Send
-            </button>
-
-            <div
-                id="response"
-                class="response"
-            >
-                Waiting for a message...
-            </div>
-
-        </div>
-
-
-        <script>
-
-            async function sendMessage() {
-
-                const message =
-                    document.getElementById(
-                        "message"
-                    ).value.trim();
-
-                const responseBox =
-                    document.getElementById(
-                        "response"
-                    );
-
-                const sendButton =
-                    document.getElementById(
-                        "sendButton"
-                    );
-
-                if (!message) {
-                    return;
-                }
-
-                sendButton.disabled = true;
-
-                responseBox.innerText =
-                    "Adiutor is thinking...";
-
-                try {
-
-                    const response =
-                        await fetch(
-                            "/api/chat",
-                            {
-                                method: "POST",
-
-                                headers: {
-                                    "Content-Type":
-                                        "application/json"
-                                },
-
-                                body: JSON.stringify({
-                                    message: message,
-                                    user_id: "browser_user"
-                                })
-                            }
-                        );
-
-                    const data =
-                        await response.json();
-
-                    if (!response.ok) {
-
-                        responseBox.innerText =
-                            data.detail ||
-                            "Something went wrong.";
-
-                        return;
-                    }
-
-                    responseBox.innerText =
-                        data.response;
-
-                    document.getElementById(
-                        "message"
-                    ).value = "";
-
-                } catch (error) {
-
-                    responseBox.innerText =
-                        "Could not connect to Adiutor.";
-
-                } finally {
-
-                    sendButton.disabled = false;
-
-                }
-
-            }
-
-        </script>
-
-    </body>
-
-    </html>
-    """
+    return FileResponse(
+        INDEX_FILE,
+        media_type="text/html"
+    )
 
 
 # ============================================================
@@ -979,15 +807,13 @@ async def whatsapp_webhook(
     # --------------------------------------------------------
     # WHATSAPP MESSAGE PROCESSING
     #
-    # This currently receives Meta webhook events.
+    # Future integration:
     #
-    # The next WhatsApp integration stage will:
-    #
-    # 1. Read the incoming WhatsApp message
-    # 2. Identify the sender
-    # 3. Pass the message to Adiutor
-    # 4. Generate the Gemini response
-    # 5. Send the response back through Meta
+    # 1. Read incoming WhatsApp message
+    # 2. Identify sender
+    # 3. Pass message to Adiutor
+    # 4. Generate Gemini response
+    # 5. Send response through Meta
     # --------------------------------------------------------
 
     return {
@@ -1027,6 +853,16 @@ async def startup_event():
     )
 
     print(
+        "Frontend:",
+        INDEX_FILE
+    )
+
+    print(
+        "Frontend exists:",
+        os.path.exists(INDEX_FILE)
+    )
+
+    print(
         "WhatsApp configured:",
         bool(
             WHATSAPP_ACCESS_TOKEN
@@ -1056,4 +892,3 @@ if __name__ == "__main__":
         ),
         reload=False
     )
-
